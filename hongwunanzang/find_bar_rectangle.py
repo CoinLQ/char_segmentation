@@ -9,19 +9,7 @@ from skimage.morphology import rectangle, binary_dilation
 from skimage.measure import regionprops
 import sys
 
-def binarisation(src_image):
-    if len(src_image.shape) == 3:
-        image = (src_image.sum(axis=2) / 3).astype('ubyte')
-    else:
-        image = src_image
-    thresh = threshold_otsu(image)
-    binary = (image > thresh).astype('ubyte')
-    binary1 = 1 - binary
-    im = 255 - np.multiply(255 - image, binary1)
-    block_size = 35
-    binary = threshold_adaptive(image, block_size, offset=20)
-    binary = binary.astype('ubyte')
-    return binary
+from common import binarisation
 
 def find_bar_rectangle(src_image, save=False):
     image = io.imread(src_image, 0)
@@ -53,11 +41,9 @@ def find_bar_rectangle(src_image, save=False):
             distance_diff = abs(abs(maxr - cc) - abs(minr - cc))
             if distance_diff < 100:
                 continue
-        print minr, minc, maxr, maxc
         regions.append( (minr, minc, maxr, maxc) )
     merged_regions = []
     count = len(regions)
-    print count
     minr = 0
     minc = 0
     maxr = 0
@@ -84,14 +70,13 @@ def find_bar_rectangle(src_image, save=False):
     #         maxr = max(regions[i * 2][2], regions[i * 2 + 1][2])
     #         maxc = max(regions[i * 2][3], regions[i * 2 + 1][3])
     #         merged_regions.append((minr, minc, maxr, maxc))
-    if len(merged_regions) != 2:
-        print '%s has %d regions.' % (src_image, count)
+    # if len(merged_regions) != 2:
+    #     print '%s has %d regions.' % (src_image, count)
 
     if save:
         for i in range(len(merged_regions)):
             minr, minc, maxr, maxc = merged_regions[i]
             region_image = image[minr:maxr+1, minc:maxc+1]
-            print minc, minr, maxc+1, maxr+1
             dstname = src_image.replace('.', '_%s.' % (i+1))
             io.imsave(dstname, region_image)
 

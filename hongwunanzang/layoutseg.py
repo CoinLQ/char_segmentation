@@ -14,7 +14,8 @@ from skimage.color import label2rgb
 import sys, json
 from operator import itemgetter
 
-from charseg import find_top, find_min_pos
+from charseg import find_top, find_min_pos, get_line_region_lst, get_label_lines
+from charseg import find_nearest_label_line, find_label_line
 from common import binarisation
 
 class BBoxLineRegion:
@@ -72,14 +73,15 @@ def region_seg(image, binary_image, image_height, page_bar_no, line_no, line_reg
         return
 
     # 洪武南藏
-    avg_height = 40
-    avg_small_height = 40
+    avg_height = 52
+    avg_small_height = 52
 
     binary = binary_image[:, line_region.left:line_region.right]
     binary_line = binary.sum(axis=1)
 
     region_width = line_region.right - line_region.left
-    step = avg_height / 12 # region_width / 4
+    label_lines = get_label_lines(None, line_region.left, line_region.right, image_height, line_region)
+    step = avg_height / 12
     start = 0
     end = image_height - 1
     for i in xrange(0, image_height, step):
@@ -112,14 +114,50 @@ def region_seg(image, binary_image, image_height, page_bar_no, line_no, line_reg
             if right_mark_pos == -1:
                 break
             if cur_pos < right_mark_pos:
-                passed_char_cnt = passed_char_cnt + (right_mark_pos - cur_pos)
-                #y = int(passed_char_cnt * avg_height + passed_small_char_cnt * avg_small_height) + start
-                y = cur_start - 1 + int((right_mark_pos - cur_pos) * avg_height)
-                #print cur_pos, cur_start, y, text[cur_pos : right_mark_pos]
-                if binary_line[y] != 0:
-                    min_pos = np.argmin(binary_line[y - avg_height / 2: y + avg_height / 2])
-                    y = min_pos + y - avg_height / 2
-                #print cur_start, y+1, text[cur_pos : right_mark_pos]
+                y = cur_start - 1
+                cur_text = text[cur_pos : right_mark_pos]
+                cur_text_length = right_mark_pos - cur_pos
+
+                local_pos = 0
+                while local_pos < cur_text_length:
+                    local_pos_new = cur_text.find(u'　', local_pos)
+                    if local_pos_new != -1: # 包含空格
+                        passed_char_cnt = local_pos_new - local_pos
+                        local_pos = local_pos_new + 1
+                        y = y + int(passed_char_cnt * avg_height)
+                        min_pos, min_sum_of_pixels = find_nearest_label_line(label_lines, y,
+                                                                         binary_line, 0.2 * region_width)
+                        if min_sum_of_pixels < 10000:
+                            y = min_pos
+                        else:
+                            start1 = y - int(avg_height / 3)
+                            if start1 < cur_start:
+                                start1 = cur_start
+                            end1 = y + int(avg_height / 3)
+                            if end1 > end - 1:
+                                end1 = end - 1
+                            if binary_line[y] != 0:
+                                min_pos = find_min_pos(binary_line, start1, y, end1)
+                                y = min_pos + start1 - 1
+                        y = find_label_line(label_lines, y + avg_height / 2) # 找到空白区域的bottom
+                    else: # 没有空格
+                        passed_char_cnt = cur_text_length - local_pos
+                        local_pos = cur_text_length
+                        y = y + int(passed_char_cnt * avg_height)
+                        min_pos, min_sum_of_pixels = find_nearest_label_line(label_lines, y,
+                                                                             binary_line, 0.2 * region_width)
+                        if min_sum_of_pixels < 10000:
+                            y = min_pos
+                        else:
+                            start1 = y - int(avg_height / 3)
+                            if start1 < cur_start:
+                                start1 = cur_start
+                            end1 = y + int(avg_height / 3)
+                            if end1 > end - 1:
+                                end1 = end - 1
+                            if binary_line[y] != 0:
+                                min_pos = find_min_pos(binary_line, start1, y, end1)
+                                y = min_pos + start1 - 1
                 add_to_region_lst(text[cur_pos : right_mark_pos],
                                   line_region.left, line_region.right,
                                   cur_start, y+1,
@@ -140,16 +178,24 @@ def region_seg(image, binary_image, image_height, page_bar_no, line_no, line_reg
                         right_small_cnt = right_end_mark_pos - right_mark_pos - 1
                         left_small_cnt = left_end_mark_pos - left_mark_pos - 1
                         passed_small_char_cnt = passed_small_char_cnt + max(right_small_cnt, left_small_cnt)
-                        #y = int(passed_char_cnt * avg_height + passed_small_char_cnt * avg_small_height) + start
+
                         y = cur_start - 1 + int(max(right_small_cnt, left_small_cnt) * avg_small_height)
-                        if binary_line[y] != 0:
-                            #min_pos = np.argmin(binary_line[y - avg_small_height / 2: y + avg_small_height / 2])
-                            min_pos = find_min_pos(binary_line, y - avg_small_height / 2, y, y + avg_small_height / 2)
-                            y = min_pos + y - avg_small_height / 2
+                        min_pos, min_sum_of_pixels = find_nearest_label_line(label_lines, y,
+                                                                             binary_line, 0.2 * region_width)
+                        if min_sum_of_pixels < 10000:
+                            y = min_pos
+                        else:
+                            start1 = y - int(avg_small_height / 2)
+                            if start1 < cur_start:
+                                start1 = cur_start
+                            end1 = y + int(avg_small_height / 2)
+                            if end1 > end - 1:
+                                end1 = end - 1
+                            if binary_line[y] != 0:
+                                min_pos = find_min_pos(binary_line, start1, y, end1)
+                                y = min_pos + start1 - 1
 
                     # right region
-                    #print cur_start, y+1, (line_region.left + region_width / 2), line_region.right, \
-                    #    text[right_mark_pos + 1: right_end_mark_pos]
                     add_to_region_lst(text[right_mark_pos + 1: right_end_mark_pos],
                                       line_region.left + region_width / 2, line_region.right,
                                       cur_start, y+1,
@@ -158,8 +204,6 @@ def region_seg(image, binary_image, image_height, page_bar_no, line_no, line_reg
                     region_no = region_no + 1
 
                     # left region
-                    #print cur_start, y+1, line_region.left, (line_region.right - region_width / 2), \
-                    #    text[left_mark_pos + 1: left_end_mark_pos]
                     add_to_region_lst(text[left_mark_pos + 1: left_end_mark_pos],
                                       line_region.left, line_region.right - region_width / 2,
                                       cur_start, y+1,
@@ -175,13 +219,22 @@ def region_seg(image, binary_image, image_height, page_bar_no, line_no, line_reg
                     else:
                         right_small_cnt = right_end_mark_pos - right_mark_pos - 1
                         passed_small_char_cnt = passed_small_char_cnt + (right_end_mark_pos - right_mark_pos - 1)
-                        #y = int(passed_char_cnt * avg_height + passed_small_char_cnt * avg_small_height) + start
                         y = cur_start - 1 + int(right_small_cnt * avg_small_height)
-                        if binary_line[y] != 0:
-                            #min_pos = np.argmin(binary_line[y - avg_small_height / 2: y + avg_small_height / 2])
-                            min_pos = find_min_pos(binary_line, y - avg_small_height / 2, y, y + avg_small_height / 2)
-                            y = min_pos + y - avg_small_height / 2
-                    #print cur_start, y+1, (line_region.left + region_width/2), line_region.right, text[right_mark_pos + 1: right_end_mark_pos]
+                        min_pos, min_sum_of_pixels = find_nearest_label_line(label_lines, y,
+                                                                             binary_line, 0.2 * region_width)
+                        if min_sum_of_pixels < 10000:
+                            y = min_pos
+                        else:
+                            start1 = y - int(avg_small_height / 2)
+                            if start1 < cur_start:
+                                start1 = cur_start
+                            end1 = y + int(avg_small_height / 2)
+                            if end1 > end - 1:
+                                end1 = end - 1
+                            if binary_line[y] != 0:
+                                min_pos = find_min_pos(binary_line, start1, y, end1)
+                                y = min_pos + start1 - 1
+
                     add_to_region_lst(text[right_mark_pos + 1: right_end_mark_pos],
                                           line_region.left + region_width / 2, line_region.right,
                                           cur_start, y+1,
@@ -192,7 +245,6 @@ def region_seg(image, binary_image, image_height, page_bar_no, line_no, line_reg
                     cur_pos = right_end_mark_pos + 1
                 cur_start = y+1
         if cur_pos <= char_cnt - 1:
-            #print cur_start, end, line_region.left, line_region.right, text[cur_pos:]
             add_to_region_lst(text[cur_pos: ],
                               line_region.left, line_region.right,
                               cur_start, end,
@@ -210,49 +262,8 @@ def layout_seg(image, page_text):
     image_height, image_width = bw.shape
     bw = (1 - bw).astype('ubyte')
 
-    total_bbox_lst = []
     label_image = label(bw, connectivity=2)
-    for region in regionprops(label_image):
-        minr, minc, maxr, maxc = region.bbox
-        total_bbox_lst.append( (minr, minc, maxr, maxc) )
-
-    total_bbox_lst.sort(key=itemgetter(2), reverse=True)
-    total_bbox_lst.sort(key=itemgetter(3), reverse=True)
-    line_lst = []
-    line_region = BBoxLineRegion()
-    for bbox in total_bbox_lst:
-        if bbox[3] - bbox[1] >= 70: # 如果box的宽大于70，可能是两列的字有粘连
-            continue
-        middle = (bbox[1] + bbox[3]) / 2
-        if not line_region.bbox_lst:
-            line_region.bbox_lst.append(bbox)
-            line_region.left = bbox[1]
-            line_region.right = bbox[3]
-            continue
-        line_middle = (line_region.left + line_region.right) / 2
-        if (middle >= line_region.left and middle <= line_region.right) or (line_middle >= bbox[1] and line_middle <= bbox[3]):
-            line_region.bbox_lst.append(bbox)
-            if line_region.left > bbox[1]:
-                line_region.left = bbox[1]
-            if line_region.right < bbox[3]:
-                line_region.right = bbox[3]
-        else:
-            if (line_region.right - line_region.left > 5):
-                line_lst.append(line_region)
-            line_region = BBoxLineRegion()
-    if line_region.bbox_lst: # and (line_region.right - line_region.left > 5):
-        line_lst.append(line_region)
-    new_line_lst = []
-    for line_region in line_lst:
-        if line_region.right - line_region.left >= 18:
-            new_line_lst.append(line_region)
-        line_lst = new_line_lst
-    for i in range(len(line_lst) - 1):
-        distance = line_lst[i].left - line_lst[i+1].right
-        if distance <= 25:
-            middle = (line_lst[i].left + line_lst[i+1].right) / 2
-            line_lst[i].left = middle
-            line_lst[i + 1].right = middle
+    line_region_lst = get_line_region_lst(label_image)
 
     region_lst = []
     line_idx = 0
@@ -261,11 +272,11 @@ def layout_seg(image, page_text):
     for i in range(1, text_len):
         text = texts[i].rstrip()
         if text:
-            region_seg(image, bw, image_height, page_bar_no, i, line_lst[line_idx], text, region_lst)
+            region_seg(image, bw, image_height, page_bar_no, i, line_region_lst[line_idx], text, region_lst)
             line_idx = line_idx + 1
         else:
-            left = line_lst[line_idx].right
-            right = line_lst[line_idx-1].left
+            left = line_region_lst[line_idx].right
+            right = line_region_lst[line_idx-1].left
             region = {
                 u'text': text,
                 u'left': left,

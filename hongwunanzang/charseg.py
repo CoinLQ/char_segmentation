@@ -166,9 +166,9 @@ def find_nearest_label_line(label_lines, start, binary_line, thresh=None):
     return min_pos, min_sum_of_pixels
 
 
-def find_label_line(label_lines, start, end):
+def find_label_line(label_lines, start, end=None):
     for pos in label_lines:
-        if pos >= start and pos <= end:
+        if pos >= start and (end is None or pos <= end):
             return pos
     return -1
 
@@ -397,6 +397,45 @@ def get_line_region_lst(label_image):
                 break
     return line_lst
 
+def get_label_lines(line_lst, region_left, region_right, height, cur_line_region=None):
+    local_label_regions = []
+    if cur_line_region is None:
+        middle = (region_left + region_right) / 2
+        for line_region in line_lst:
+            if line_region.left < middle and middle < line_region.right:
+                local_label_regions = line_region.bbox_lst
+    else:
+        local_label_regions = cur_line_region.bbox_lst
+
+    label_lines = []
+    if local_label_regions:
+        if local_label_regions[0][2] - local_label_regions[0][0] <= 30:
+            label_lines.append(max(local_label_regions[0][0] - 4, 0))
+        else:
+            label_lines.append(max(local_label_regions[0][0] - 2, 0))
+        for i in range(len(local_label_regions) - 1):
+            h1 = local_label_regions[i][2] - local_label_regions[i][0]
+            h2 = local_label_regions[i + 1][2] - local_label_regions[i + 1][0]
+            y1 = local_label_regions[i][2]
+            y2 = local_label_regions[i + 1][0]
+            if y1 < y2:
+                if (y2 - y1 < 30):
+                    if (h1 < 35 or h2 < 35):
+                        label_lines.append(y1 + int((y2 - y1) * h2 * 1.0 / (h1 + h2)))
+                    else:
+                        label_lines.append((y1 + y2) / 2)
+                else:
+                    label_lines.append(y1)
+                    label_lines.append(y2)
+            else:
+                if y1 - y2 < 20:
+                    label_lines.append((y1 + y2) / 2)
+                else:
+                    label_lines.append(y2)
+                    label_lines.append(y1)
+        label_lines.append(min(local_label_regions[-1][2] + 4, height - 1))
+    return label_lines
+
 MAX_DIFF_FROM_HORIZONTAL = 9
 
 
@@ -496,33 +535,7 @@ def charseg(imagepath, region_lst, page_id, to_binary=True):
             if line_region.left < middle and middle < line_region.right:
                 local_label_regions = line_region.bbox_lst
 
-        label_lines = []
-        if local_label_regions:
-            if local_label_regions[0][2] - local_label_regions[0][0] <= 30:
-                label_lines.append( max(local_label_regions[0][0] - 4, 0) )
-            else:
-                label_lines.append(max(local_label_regions[0][0] - 2, 0))
-            for i in range(len(local_label_regions) - 1):
-                h1 = local_label_regions[i][2] - local_label_regions[i][0]
-                h2 = local_label_regions[i+1][2] - local_label_regions[i+1][0]
-                y1 = local_label_regions[i][2]
-                y2 = local_label_regions[i+1][0]
-                if y1 < y2:
-                    if (y2-y1 < 30):
-                        if (h1 < 35 or h2 < 35):
-                            label_lines.append( y1 + int((y2-y1) * h2 * 1.0 / (h1+h2)) )
-                        else:
-                            label_lines.append((y1 + y2) / 2)
-                    else:
-                        label_lines.append(y1)
-                        label_lines.append(y2)
-                else:
-                    if y1 - y2 < 20:
-                        label_lines.append( (y1 + y2) / 2 )
-                    else:
-                        label_lines.append(y2)
-                        label_lines.append(y1)
-            label_lines.append( min(local_label_regions[-1][2] + 4, height-1) )
+        label_lines = get_label_lines(line_lst, region_left, region_right, height)
 
         binary_line = binary.sum(axis=1)
 

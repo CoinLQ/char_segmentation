@@ -13,7 +13,7 @@ import json
 import redis
 from operator import itemgetter
 
-from common import binarisation
+from common import binarisation, centroid, geometric_center
 
 redis_client = redis.StrictRedis(host='localhost', port=6379, db=0)
 
@@ -436,6 +436,13 @@ def get_label_lines(line_lst, region_left, region_right, height, cur_line_region
         label_lines.append(min(local_label_regions[-1][2] + 4, height - 1))
     return label_lines
 
+def get_region_label_lines(label_lines, region_top, region_bottom):
+    region_label_lines = []
+    for l in label_lines:
+        if l >= region_top - 10 and l <= region_bottom + 10:
+            region_label_lines.append(l - region_top)
+    return region_label_lines
+
 MAX_DIFF_FROM_HORIZONTAL = 9
 
 
@@ -508,57 +515,69 @@ def charseg(imagepath, region_lst, page_id, to_binary=True):
     char_lst = []
 
     bw = (1 - binary).astype('ubyte')
+    image_height, image_width = bw.shape
     label_image = label(bw, connectivity=2)
     line_lst = get_line_region_lst(label_image)
 
     last_avg_height = 0
+    last_region_left = -1
+    label_lines = []
     for region in region_lst:
         region_top = region[u'top']
         region_bottom = region[u'bottom']
         region_left = region[u'left']
         region_right = region[u'right']
         text = region[u'text']
+        if not text:
+            continue
+
         line_no = region[u'line_no']
         region_no = region[u'region_no']
         height = region_bottom - region_top
         region_width = region_right - region_left
 
         mark = region.get(u'mark', None)
+        #if mark is not None:
+        #    continue
 
-        region_image = image[region_top : region_bottom, region_left : region_right]
-        binary_region_image = binary_image[region_top: region_bottom, region_left: region_right]
+        region_image = image[region_top : region_bottom + 5, region_left : region_right + 5]
+        binary_region_image = binary_image[region_top: region_bottom + 5, region_left: region_right + 5]
         binary = (binary_region_image / 255).astype('ubyte')
         binary = 1 - binary
 
-        middle = (region_left + region_right) / 2
-        for line_region in line_lst:
-            if line_region.left < middle and middle < line_region.right:
-                local_label_regions = line_region.bbox_lst
-
-        label_lines = get_label_lines(line_lst, region_left, region_right, height)
+        if region_left != last_region_left:
+            label_lines = get_label_lines(line_lst, region_left, region_right, image_height)
+        else:
+            last_region_left = region_left
+        if region_top != 0:
+            region_label_lines = get_region_label_lines(label_lines, region_top, region_bottom)
+        else:
+            region_label_lines = label_lines
 
         binary_line = binary.sum(axis=1)
 
         step = 5
         if region_width <= SMALL_FONT_REGION_WIDTH:
             step = 2
-        start = label_lines[0]
-        end = label_lines[-1]
+        start = region_label_lines[0]
+        end = region_label_lines[-1]
         start = max(0, start - step)
         end = min(end + 1 + step, height)
         h = end - start
-        text = text.strip(u'　')
+        #text = text.strip(u'　')
         # eprint(text)
-        # eprint(label_lines)
+        # eprint(region_label_lines)
         if u'　' not in text:
             char_count = len(text)
             if not char_count:
                 continue
             avg_height = h * 1.0 / char_count
-            if last_avg_height != 0 and abs(avg_height - last_avg_height) > 10:
-                avg_height = last_avg_height
-            else:
-                last_avg_height = avg_height
+            # if last_avg_height != 0 and abs(avg_height - last_avg_height) > 10:
+            #     avg_height = last_avg_height
+            # else:
+            #     last_avg_height = avg_height
+            if avg_height > 54:
+                avg_height = 50
             rel_top = 0
             rel_bottom = 0
             for i in range(char_count):
@@ -580,7 +599,7 @@ def charseg(imagepath, region_lst, page_id, to_binary=True):
                 rel_bottom = rel_top + int(cur_avg_height)
                 if rel_bottom >= end - 1:
                     rel_bottom = end - 1
-                min_pos, min_sum_of_pixels = find_nearest_label_line(label_lines, rel_bottom - 1, binary_line)
+                min_pos, min_sum_of_pixels = find_nearest_label_line(region_label_lines, rel_bottom - 1, binary_line, 15)
                 if min_sum_of_pixels < 10000:
                     #eprint('min_pos, min_sum_of_pixels: ', min_pos, min_sum_of_pixels)
                     rel_bottom = min_pos
@@ -591,7 +610,7 @@ def charseg(imagepath, region_lst, page_id, to_binary=True):
                     end1 = rel_bottom - 1 + int(avg_height / 4)
                     if end1 > end - 1:
                         end1 = end - 1
-                    pos = -1 #find_label_line(label_lines, start1, end1)
+                    pos = -1 #find_label_line(region_label_lines, start1, end1)
                     if pos > 0:
                         rel_bottom = pos
                     else:
@@ -601,10 +620,17 @@ def charseg(imagepath, region_lst, page_id, to_binary=True):
 
                 top = rel_top + region_top
                 bottom = rel_bottom + region_top
-                if i == char_count - 1:
-                    if (bottom - top) < avg_height:
-                        bottom = top + int(avg_height)
-                        rel_bottom = rel_top + int(avg_height)
+                # if i == char_count - 1:
+                #     if (bottom - top) < avg_height:
+                #         bottom = top + int(avg_height)
+                #         rel_bottom = rel_top + int(avg_height)
+                if i == char_count - 1:  # 最后一个字
+                    c = geometric_center(binary_line[rel_top:rel_bottom])
+                    new_rel_bottom = rel_top + 2 * c
+                    if new_rel_bottom + region_top > image_height:
+                        new_rel_bottom = image_height - region_top
+                    if rel_bottom < new_rel_bottom and np.sum(binary_line[rel_bottom:new_rel_bottom]) < 5:
+                        rel_bottom = new_rel_bottom
 
                 char_no = i + 1
                 char = {
@@ -627,10 +653,10 @@ def charseg(imagepath, region_lst, page_id, to_binary=True):
             start_pos = start
             added_char_count = 0
 
-            # 找到label_lines对应不同文本段的分隔索引
+            # 找到region_label_lines对应不同文本段的分隔索引
             density_lst = []
-            for i in range(len(label_lines) - 1):
-                density = np.sum(binary_line[label_lines[i] : label_lines[i+1]]) * 1.0 / (label_lines[i+1] - label_lines[i])
+            for i in range(len(region_label_lines) - 1):
+                density = np.sum(binary_line[region_label_lines[i] : region_label_lines[i+1]]) * 1.0 / (region_label_lines[i+1] - region_label_lines[i])
                 density_lst.append((i, density))
             density_lst.sort(key=itemgetter(1))
             label_line_seg_index_lst = []
@@ -644,9 +670,9 @@ def charseg(imagepath, region_lst, page_id, to_binary=True):
                 start_pos = cur_pos
                 txt = text_segs[text_segs_idx]
                 if text_segs_idx != text_segs_cnt - 1:
-                    end_pos = label_lines[ label_line_seg_index_lst[text_segs_idx] ] + step
+                    end_pos = region_label_lines[ label_line_seg_index_lst[text_segs_idx] ] + step
                     h = end_pos - cur_pos
-                    cur_pos = label_lines[ label_line_seg_index_lst[text_segs_idx] + 1 ] - step
+                    cur_pos = region_label_lines[ label_line_seg_index_lst[text_segs_idx] + 1 ] - step
                 else:
                     end_pos = end
                     h = end_pos - cur_pos
@@ -677,8 +703,10 @@ def charseg(imagepath, region_lst, page_id, to_binary=True):
                     rel_bottom = rel_top + int(cur_avg_height)
                     if rel_bottom >= end_pos:
                         rel_bottom = end_pos
-                    min_pos, min_sum_of_pixels = find_nearest_label_line(label_lines, rel_bottom - 1,
+                    min_pos, min_sum_of_pixels = find_nearest_label_line(region_label_lines, rel_bottom - 1,
                                                                          binary_line, 0.2 * region_width)
+                    if rel_bottom >= end_pos:
+                        rel_bottom = end_pos
                     if min_sum_of_pixels < 10000:
                         rel_bottom = min_pos
                     else:
@@ -691,6 +719,13 @@ def charseg(imagepath, region_lst, page_id, to_binary=True):
                         if binary_line[rel_bottom - 1] != 0:
                             min_pos = find_min_pos(binary_line, start1, rel_bottom - 1, end1)
                             rel_bottom = min_pos + start1
+                    if i == char_count - 1: # 最后一个字
+                        c = geometric_center(binary_line[rel_top:rel_bottom])
+                        new_rel_bottom = rel_top + 2 * c
+                        if new_rel_bottom + region_top > image_height:
+                            new_rel_bottom = image_height - region_top
+                        if rel_bottom < new_rel_bottom and np.sum(binary_line[rel_bottom:new_rel_bottom]) < 5:
+                            rel_bottom = new_rel_bottom
 
                     top = rel_top + region_top
                     bottom = rel_bottom + region_top

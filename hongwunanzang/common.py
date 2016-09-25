@@ -25,3 +25,26 @@ def binarisation1(src_image):
     binary = threshold_adaptive(image, block_size, offset=20)
     binary = binary.astype('ubyte')
     return binary
+
+def centroid(arr):
+    length = arr.shape[0]
+    moment = 0
+    mass = 0
+    for i in range(length):
+        mass = mass + arr[i]
+        moment = moment + arr[i] * i
+    return (moment / mass)
+
+def geometric_center(arr):
+    length = arr.shape[0]
+    s = 0
+    e = 0
+    for i in range(length):
+        if arr[i] > 0:
+            s = i
+            break
+    for i in range(length-1, -1, -1):
+        if arr[i] > 0:
+            e = i
+            break
+    return (s + e) / 2

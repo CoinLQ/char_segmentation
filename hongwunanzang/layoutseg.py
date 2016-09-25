@@ -82,17 +82,17 @@ def region_seg(image, binary_image, image_height, page_bar_no, line_no, line_reg
     region_width = line_region.right - line_region.left
     label_lines = get_label_lines(None, line_region.left, line_region.right, image_height, line_region)
     step = avg_height / 12
-    start = 0
-    end = image_height - 1
-    for i in xrange(0, image_height, step):
-        if np.sum(binary_line[i:i + step]) >= 10:
-            start = i
-            break
-    for i in xrange(image_height - 1, 0, -step):
-        if np.sum(binary_line[i:i + step]) >= 10:
-            end = i
-            break
-    start = max(0, start - step)
+    start = label_lines[0]
+    end = label_lines[-1]
+    # for i in xrange(0, image_height, step):
+    #     if np.sum(binary_line[i:i + step]) >= 10:
+    #         start = i
+    #         break
+    # for i in xrange(image_height - 1, 0, -step):
+    #     if np.sum(binary_line[i:i + step]) >= 10:
+    #         end = i
+    #         break
+    start = max(0, start)
     end = min(end + 1 + step, image_height)
     h = end - start
 
@@ -126,7 +126,7 @@ def region_seg(image, binary_image, image_height, page_bar_no, line_no, line_reg
                         local_pos = local_pos_new + 1
                         y = y + int(passed_char_cnt * avg_height)
                         min_pos, min_sum_of_pixels = find_nearest_label_line(label_lines, y,
-                                                                         binary_line, 0.2 * region_width)
+                                                                         binary_line, 0.25 * region_width)
                         if min_sum_of_pixels < 10000:
                             y = min_pos
                         else:
@@ -145,7 +145,7 @@ def region_seg(image, binary_image, image_height, page_bar_no, line_no, line_reg
                         local_pos = cur_text_length
                         y = y + int(passed_char_cnt * avg_height)
                         min_pos, min_sum_of_pixels = find_nearest_label_line(label_lines, y,
-                                                                             binary_line, 0.2 * region_width)
+                                                                             binary_line, 0.25 * region_width)
                         if min_sum_of_pixels < 10000:
                             y = min_pos
                         else:
@@ -157,14 +157,14 @@ def region_seg(image, binary_image, image_height, page_bar_no, line_no, line_reg
                                 end1 = end - 1
                             if binary_line[y] != 0:
                                 min_pos = find_min_pos(binary_line, start1, y, end1)
-                                y = min_pos + start1 - 1
+                                y = min_pos + start1
                 add_to_region_lst(text[cur_pos : right_mark_pos],
                                   line_region.left, line_region.right,
-                                  cur_start, y+1,
+                                  cur_start, y,
                                   line_no, region_no,
                                   page_bar_no, region_lst)
                 region_no = region_no + 1
-                cur_start = y+1
+                cur_start = y
             # right small
             right_end_mark_pos = text.find(u'>', right_mark_pos)
             if right_end_mark_pos != -1:
@@ -179,9 +179,9 @@ def region_seg(image, binary_image, image_height, page_bar_no, line_no, line_reg
                         left_small_cnt = left_end_mark_pos - left_mark_pos - 1
                         passed_small_char_cnt = passed_small_char_cnt + max(right_small_cnt, left_small_cnt)
 
-                        y = cur_start - 1 + int(max(right_small_cnt, left_small_cnt) * avg_small_height)
+                        y = cur_start + int(max(right_small_cnt, left_small_cnt) * avg_small_height)
                         min_pos, min_sum_of_pixels = find_nearest_label_line(label_lines, y,
-                                                                             binary_line, 0.2 * region_width)
+                                                                             binary_line, 0.25 * region_width)
                         if min_sum_of_pixels < 10000:
                             y = min_pos
                         else:
@@ -193,20 +193,20 @@ def region_seg(image, binary_image, image_height, page_bar_no, line_no, line_reg
                                 end1 = end - 1
                             if binary_line[y] != 0:
                                 min_pos = find_min_pos(binary_line, start1, y, end1)
-                                y = min_pos + start1 - 1
+                                y = min_pos + start1
 
                     # right region
                     add_to_region_lst(text[right_mark_pos + 1: right_end_mark_pos],
                                       line_region.left + region_width / 2, line_region.right,
-                                      cur_start, y+1,
+                                      cur_start, y,
                                       line_no, region_no,
                                       page_bar_no, region_lst, u'<')
                     region_no = region_no + 1
 
                     # left region
                     add_to_region_lst(text[left_mark_pos + 1: left_end_mark_pos],
-                                      line_region.left, line_region.right - region_width / 2,
-                                      cur_start, y+1,
+                                      line_region.left, line_region.left + region_width / 2,
+                                      cur_start, y,
                                       line_no, region_no,
                                       page_bar_no, region_lst, u'<')
                     region_no = region_no + 1
@@ -221,7 +221,7 @@ def region_seg(image, binary_image, image_height, page_bar_no, line_no, line_reg
                         passed_small_char_cnt = passed_small_char_cnt + (right_end_mark_pos - right_mark_pos - 1)
                         y = cur_start - 1 + int(right_small_cnt * avg_small_height)
                         min_pos, min_sum_of_pixels = find_nearest_label_line(label_lines, y,
-                                                                             binary_line, 0.2 * region_width)
+                                                                             binary_line, 0.25 * region_width)
                         if min_sum_of_pixels < 10000:
                             y = min_pos
                         else:
@@ -233,17 +233,17 @@ def region_seg(image, binary_image, image_height, page_bar_no, line_no, line_reg
                                 end1 = end - 1
                             if binary_line[y] != 0:
                                 min_pos = find_min_pos(binary_line, start1, y, end1)
-                                y = min_pos + start1 - 1
+                                y = min_pos + start1
 
                     add_to_region_lst(text[right_mark_pos + 1: right_end_mark_pos],
                                           line_region.left + region_width / 2, line_region.right,
-                                          cur_start, y+1,
+                                          cur_start, y,
                                           line_no, region_no,
                                           page_bar_no, region_lst, u'<')
                     region_no = region_no + 1
 
                     cur_pos = right_end_mark_pos + 1
-                cur_start = y+1
+                cur_start = y
         if cur_pos <= char_cnt - 1:
             add_to_region_lst(text[cur_pos: ],
                               line_region.left, line_region.right,

@@ -571,12 +571,25 @@ def charseg(imagepath, region_lst, page_id, to_binary=True):
             step = 2
         start = region_label_lines[0]
         end = region_label_lines[-1]
-        start = max(0, start - step)
+        #start = max(0, start - step)
         end = min(end + 1 + step, height)
         h = end - start
-        text = text.strip(u'　')
         # eprint(text)
         # eprint(region_label_lines)
+        if text[0] == u'　': # 将开头的空白区域跳过
+            max_white_index = -1
+            for i in range(len(region_label_lines) - 1):
+                density = np.sum(binary_line[region_label_lines[i]: region_label_lines[i + 1]]) * 1.0 / (
+                region_label_lines[i + 1] - region_label_lines[i])
+                if density < 0.5:
+                    max_white_index = i
+                else:
+                    break
+            if max_white_index >= 0:
+                region_label_lines = region_label_lines[max_white_index + 1 : ]
+                start = region_label_lines[0]
+            text = text.strip(u'　')
+
         if u'　' not in text:
             char_count = len(text)
             if not char_count:

@@ -216,7 +216,17 @@ def get_line_region_lst(label_image):
         line_lst.append(line_region)
     new_line_lst = []
     for line_region in line_lst:
-        if line_region.right - line_region.left >= 18:
+        if line_region.right - line_region.left >= 100: # 对宽度超过100的列分成两列
+            line_region1 = BBoxLineRegion()
+            line_region2 = BBoxLineRegion()
+            line_middle = (line_region.left + line_region.right) / 2
+            line_region1.left = line_middle
+            line_region1.right = line_region.right
+            line_region2.left = line_region.left
+            line_region2.right = line_middle
+            new_line_lst.append(line_region1)
+            new_line_lst.append(line_region2)
+        elif line_region.right - line_region.left >= 18:
             new_line_lst.append(line_region)
     line_lst = new_line_lst
     for i in range(len(line_lst) - 1):
@@ -564,7 +574,7 @@ def charseg(imagepath, region_lst, page_id, to_binary=True):
         start = max(0, start - step)
         end = min(end + 1 + step, height)
         h = end - start
-        #text = text.strip(u'　')
+        text = text.strip(u'　')
         # eprint(text)
         # eprint(region_label_lines)
         if u'　' not in text:
@@ -589,7 +599,7 @@ def charseg(imagepath, region_lst, page_id, to_binary=True):
                 else:
                     cur_avg_height = float(cur_avg_height)
                     if mark == u'@':
-                        cur_avg_height = region_width / 50.0 * cur_avg_height
+                        cur_avg_height = avg_height
                     elif cur_avg_height < avg_height / 2:
                         cur_avg_height = avg_height
                 if rel_bottom:
